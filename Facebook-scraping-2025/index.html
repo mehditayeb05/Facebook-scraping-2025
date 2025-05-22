@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Simulation de Scraping d'API et Protection</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+  <div class="container mx-auto p-4">
+    <h1 class="text-3xl font-bold text-center text-blue-600 mb-6">
+      Simulation de Scraping d'API (Type Facebook)
+    </h1>
+
+    <!-- Contrôles -->
+    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">Contrôles</h2>
+      <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+        <button id="startScraping" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+          Lancer le Scraping
+        </button>
+        <div class="flex items-center">
+          <label class="mr-2">Protection Active :</label>
+          <input id="toggleProtection" type="checkbox" class="h-5 w-5" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Statistiques -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div class="bg-white shadow-md rounded-lg p-4">
+        <h3 class="text-lg font-semibold">Requêtes Effectuées</h3>
+        <p id="requestCount" class="text-2xl font-bold text-gray-600">0</p>
+      </div>
+      <div class="bg-white shadow-md rounded-lg p-4">
+        <h3 class="text-lg font-semibold">Requêtes Bloquées</h3>
+        <p id="blockedCount" class="text-2xl font-bold text-gray-600">0</p>
+      </div>
+    </div>
+
+    <!-- Données Scrapées -->
+    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">Données Scrapées</h2>
+      <div class="overflow-x-auto">
+        <table class="min-w-full bg-white">
+          <thead>
+            <tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
+              <th class="py-3 px-6 text-left">ID</th>
+              <th class="py-3 px-6 text-left">Nom</th>
+              <th class="py-3 px-6 text-left">Email</th>
+              <th class="py-3 px-6 text-left">Username</th>
+              <th class="py-3 px-6 text-left">Téléphone</th>
+              <th class="py-3 px-6 text-left">Localisation</th>
+              <th class="py-3 px-6 text-left">Date de Naissance</th>
+              <th class="py-3 px-6 text-left">Genre</th>
+            </tr>
+          </thead>
+          <tbody id="scrapedData" class="text-gray-600 text-sm font-light"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Journal des Événements -->
+    <div class="bg-white shadow-md rounded-lg p-6">
+      <h2 class="text-xl font-semibold mb-4">Journal des Événements</h2>
+      <ul id="eventLog" class="list-disc pl-5 space-y-2"></ul>
+    </div>
+  </div>
+
+  <script>
+    let isScraping = false;
+    let protectionEnabled = false;
+    let requestCount = 0;
+    let blockedCount = 0;
+    let requestsInWindow = [];
+    const rateLimit = 5; // max 5 requêtes par seconde
+    let scrapingInterval = null;
+
+    function generateRandomUser(id) {
+      const names = ["Alice", "Bob", "Charlie", "David", "Eve", "Frank", "Grace", "Hannah"];
+      const locations = ["Paris", "Lyon", "Marseille", "Toulouse"];
+      const genders = ["Homme", "Femme"];
+
+      const name = names[Math.floor(Math.random() * names.length)] + id;
+      const email = `user${id}@example.com`;
+      const username = `user_${id}`;
+      const phone = `+33${Math.floor(1000000 + Math.random() * 9000000)}`;
+      const location = locations[Math.floor(Math.random() * locations.length)];
+      const birthday = `${1970 + Math.floor(Math.random() * 35)}-${(1 + Math.floor(Math.random() * 12)).toString().padStart(2, '0')}-${(1 + Math.floor(Math.random() * 28)).toString().padStart(2, '0')}`;
+      const gender = genders[Math.floor(Math.random() * genders.length)];
+
+      return {
+        id,
+        name,
+        email,
+        username,
+        phone,
+        location,
+        birthday,
+        gender,
+      };
+    }
+
+    function updateRequestCount(count) {
+      document.getElementById("requestCount").textContent = count;
+    }
+
+    function updateBlockedCount(count) {
+      document.getElementById("blockedCount").textContent = count;
+    }
+
+    function addScrapedData(user) {
+      const tbody = document.getElementById("scrapedData");
+      const tr = document.createElement("tr");
+      tr.className = "border-b border-gray-200 hover:bg-gray-100";
+      tr.innerHTML = `
+        <td class="py-3 px-6">${user.id}</td>
+        <td class="py-3 px-6">${user.name}</td>
+        <td class="py-3 px-6">${user.email}</td>
+        <td class="py-3 px-6">${user.username}</td>
+        <td class="py-3 px-6">${user.phone}</td>
+        <td class="py-3 px-6">${user.location}</td>
+        <td class="py-3 px-6">${user.birthday}</td>
+        <td class="py-3 px-6">${user.gender}</td>
+      `;
+      tbody.prepend(tr);
+    }
+
+    function updateEventLog(message) {
+      const log = document.getElementById("eventLog");
+      const li = document.createElement("li");
+      const timestamp = new Date().toLocaleString();
+      li.textContent = `${timestamp}: ${message}`;
+      log.prepend(li);
+    }
+
+    function cleanRequestsWindow() {
+      const now = Date.now();
+      requestsInWindow = requestsInWindow.filter(t => now - t < 1000);
+    }
+
+    // Fonction de scraping simulé
+    function simulateScraping() {
+      if (!isScraping) return;
+
+      cleanRequestsWindow();
+
+      if (protectionEnabled && requestsInWindow.length >= rateLimit) {
+        blockedCount++;
+        updateBlockedCount(blockedCount);
+        updateEventLog("Requête bloquée : Limite de taux dépassée");
+        return;
+      }
+
+      requestCount++;
+      updateRequestCount(requestCount);
+
+      const user = generateRandomUser(requestCount);
+      addScrapedData(user);
+      updateEventLog(`Données scrapées : ${user.name} (${user.email})`);
+
+      requestsInWindow.push(Date.now());
+    }
+
+    document.getElementById("startScraping").addEventListener("click", () => {
+      isScraping = !isScraping;
+      const btn = document.getElementById("startScraping");
+      if (isScraping) {
+        btn.textContent = "Arrêter le Scraping";
+        btn.className = "bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded";
+        updateEventLog("Scraping démarré");
+        scrapingInterval = setInterval(simulateScraping, 200); // 5 req/sec max
+      } else {
+        btn.textContent = "Lancer le Scraping";
+        btn.className = "bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded";
+        updateEventLog("Scraping arrêté");
+        clearInterval(scrapingInterval);
+        scrapingInterval = null;
+      }
+    });
+
+    document.getElementById("toggleProtection").addEventListener("change", (e) => {
+      protectionEnabled = e.target.checked;
+      updateEventLog(`Protection ${protectionEnabled ? 'activée' : 'désactivée'}`);
+
+      if (!protectionEnabled) {
+        blockedCount = 0;
+        requestCount = 0;
+        requestsInWindow = [];
+        updateBlockedCount(blockedCount);
+        updateRequestCount(requestCount);
+      }
+    });
+  </script>
+</body>
+</html>
